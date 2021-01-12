@@ -4,6 +4,7 @@ set -euxo pipefail
 SSH_OPTS="-l jenkins_aos_cd_bot -o StrictHostKeychecking=no use-mirror-upload.ops.rhcloud.com"
 KN_VERSION=${1}
 KN_URL=${2}
+LINUX_PLATFORMS=(linux-amd64 linux-arm64 linux-ppc64le linux-s390x)
 
 # check if already exists
 ### TODO: figure out why the script exits regardless of test result when this is uncommented:
@@ -20,24 +21,31 @@ trap "rm -rf '${OUTDIR}'" EXIT INT TERM
 pkg_tar() {
     local dir
     case "$1" in
-        x86_64) dir=linux;;
-        macos) dir=macos;;
-        aarch64|ppc64le|s390x) dir=linux-${1};;
+        linux-*) dir=${1};;
+        macos) dir=macos-amd64;;
     esac
     cp ./LICENSE ${OUTDIR}/${dir}
-    tar --owner 0 --group 0 -C ${OUTDIR}/${dir} . -zcf ./kn-${dir}-amd64-${KN_VERSION}.tar.gz
+    tar --owner 0 --group 0 -C ${OUTDIR}/${dir} . -zcf ./kn-${dir}-${KN_VERSION}.tar.gz
 }
 
 
 pushd ${OUTDIR}
-mkdir linux macos windows
-wget "${KN_URL}/signed/linux/kn-linux-amd64" -O linux/kn
-wget "${KN_URL}/signed/macos/kn-darwin-amd64" -O macos/kn
+for platform in ${LINUX_PLATFORMS[*]}
+do
+    mkdir ${platform}
+    wget "${KN_URL}/signed/linux/kn-${platform}" -O ${platform}/kn
+    chmod +x ${platform}/kn
+done
+mkdir macos-amd64 windows
+wget "${KN_URL}/signed/macos/kn-darwin-amd64" -O macos-amd64/kn
 wget "${KN_URL}/signed/windows/kn-windows-amd64.exe" -O windows/kn.exe
 wget https://raw.githubusercontent.com/openshift/knative-client/master/LICENSE
-chmod +x {linux,macos}/kn
+chmod +x {linux,macos}-*/kn
 
-pkg_tar x86_64
+for platform in ${LINUX_PLATFORMS[*]}
+do
+    pkg_tar ${platform}
+done
 pkg_tar macos
 cp ./LICENSE ${OUTDIR}/windows/
 zip --quiet --junk-path - ${OUTDIR}/windows/* > "${OUTDIR}/kn-windows-amd64-${KN_VERSION}.zip"
